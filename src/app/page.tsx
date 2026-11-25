@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -12,55 +12,15 @@ import {
   EyeOff,
   ArrowRight,
   ShieldCheck,
-  CheckCircle2,
   AlertCircle,
   QrCode,
   Award,
   Loader2,
   ExternalLink,
-  Sparkles,
 } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
-
-  // Perfiles dinámicos cargados desde Supabase
-  const [profiles, setProfiles] = useState<
-    { correo: string; rol: string; nombres_completos: string }[]
-  >([]);
-
-  // Cargar perfiles reales desde la tabla perfiles_usuarios al montar
-  useEffect(() => {
-    const fetchProfiles = async () => {
-      try {
-        const { data, error } = await supabase
-          .from("perfiles_usuarios")
-          .select("correo, rol, nombres_completos")
-          .order("nombres_completos", { ascending: true });
-
-        if (error) {
-          console.error("Error fetching profiles:", error);
-          return;
-        }
-
-        if (data) {
-          // Cast to any[] to avoid type inference issues
-          const rows = data as any[];
-          setProfiles(
-            rows.map((p) => ({
-              correo: p.correo,
-              rol: p.rol || "",
-              nombres_completos: p.nombres_completos || "",
-            }))
-          );
-        }
-      } catch (err) {
-        console.error("Error fetching profiles:", err);
-      }
-    };
-
-    fetchProfiles();
-  }, [router]);
 
   // Estados del Formulario
   const [email, setEmail] = useState("");
@@ -163,14 +123,6 @@ export default function LoginPage() {
     } finally {
       setLoading(false);
     }
-  };
-
-  // Función de autocompletado rápido para pruebas
-  const autofillAccount = (userEmail: string, userPass: string) => {
-    setEmail(userEmail);
-    setPassword(userPass);
-    setErrorMessage(null);
-    setAuthMismatch(null);
   };
 
   // Función para crear usuario en Supabase Auth (solo admin)
@@ -562,50 +514,6 @@ export default function LoginPage() {
               </div>
             )}
           </form>
-
-          {/* Accesos Rápidos dinámicos con perfiles reales de Supabase */}
-          {profiles.length > 0 && (
-            <>
-              <div className="mt-8 pt-6 border-t border-slate-200">
-                <div className="flex items-center gap-1.5 mb-2.5">
-                  <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-                  <span className="text-[11px] font-black uppercase tracking-wider text-slate-500">
-                    Usuarios Registrados en Supabase (Click para Probar)
-                  </span>
-                </div>
-
-                <p className="text-[11px] text-slate-400 mb-3">
-                  Seleccione un perfil para consultar en tiempo real su rol en la base de datos:
-                </p>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  {profiles.map((profile) => (
-                    <button
-                      key={profile.correo}
-                      type="button"
-                      onClick={() =>
-                        autofillAccount(profile.correo, "Pichincha2026*")
-                      }
-                      className="p-2.5 rounded-xl bg-slate-100 hover:bg-indigo-50 hover:border-indigo-300 border border-slate-200 text-left transition-all text-xs group"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-extrabold text-slate-800 group-hover:text-indigo-700">
-                          {profile.nombres_completos}
-                        </span>
-                        <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-indigo-100 text-indigo-800">
-                          {profile.rol}
-                        </span>
-                      </div>
-                      <span className="text-[11px] text-slate-500 block truncate mt-0.5">
-                        {profile.correo}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
-
         </div>
 
         {/* Pie de Página Derecho */}
