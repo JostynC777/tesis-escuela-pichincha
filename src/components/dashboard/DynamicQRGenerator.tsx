@@ -1,44 +1,46 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import QRCode from "qrcode";
+import { supabase } from "@/lib/supabase";
 import {
   QrCode,
   RefreshCw,
   Clock,
   Users,
-  CheckCircle2,
   Copy,
   Check,
-  Radio,
-  Calendar,
-  AlertTriangle,
-  UserCheck,
-  XCircle,
+  Loader2,
 } from "lucide-react";
 
 interface DynamicQRGeneratorProps {
+  courseId?: string;
   classNameTitle: string;
   classCode: string;
 }
 
-export function DynamicQRGenerator({ classNameTitle, classCode }: DynamicQRGeneratorProps) {
+interface AttendanceStudentItem {
+  id: string;
+  name: string;
+  codigoQr: string;
+  state: "PRESENTE" | "ATRASO" | "AUSENTE" | "JUSTIFICADO";
+  time: string;
+}
+
+export function DynamicQRGenerator({
+  courseId,
+  classNameTitle,
+  classCode,
+}: DynamicQRGeneratorProps) {
   const [qrUrl, setQrUrl] = useState<string>("");
   const [token, setToken] = useState<string>("5291");
   const [copied, setCopied] = useState<boolean>(false);
   const [activeDate, setActiveDate] = useState<string>("");
+  const [loadingList, setLoadingList] = useState<boolean>(false);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [attendanceList, setAttendanceList] = useState<AttendanceStudentItem[]>([]);
 
-  // Attendance states for the classroom
-  const [attendanceList, setAttendanceList] = useState([
-    { id: 1, name: "Mateo Toapanta", state: "presente", time: "07:15 AM" },
-    { id: 2, name: "Doménica Chiluisa", state: "presente", time: "07:12 AM" },
-    { id: 3, name: "Jostyn Quishpe", state: "atraso", time: "07:32 AM" },
-    { id: 4, name: "Camila Pillajo", state: "falta", time: "Sin registro" },
-    { id: 5, name: "Kevin Criollo", state: "presente", time: "07:18 AM" },
-    { id: 6, name: "Dayana Tipán", state: "presente", time: "07:20 AM" },
-    { id: 7, name: "Brayan Sangucho", state: "presente", time: "07:14 AM" },
-    { id: 8, name: "Evelyn Cuichán", state: "falta", time: "Sin registro" },
-  ]);
+  const todayIso = new Date().toISOString().slice(0, 10);
 
   const generateQRCode = async () => {
     const randomPin = Math.floor(1000 + Math.random() * 9000).toString();
@@ -47,9 +49,10 @@ export function DynamicQRGenerator({ classNameTitle, classCode }: DynamicQRGener
     const payload = JSON.stringify({
       institucion: "Escuela Pichincha - Lloa",
       aula: classCode,
-      fecha: new Date().toISOString().slice(0, 10),
+      curso_id: courseId || "",
+      fecha: todayIso,
       pin: randomPin,
-      validez: "Jornada Matutina 2026",
+      validez: "Jornada Matutina",
     });
 
     try {
@@ -67,6 +70,54 @@ export function DynamicQRGenerator({ classNameTitle, classCode }: DynamicQRGener
     }
   };
 
+  const loadCourseAttendance = useCallback(async () => {
+    if (!courseId) {
+      setAttendanceList([]);
+      return;
+    }
+    setLoadingList(true);
+    try {
+      const [{ data: studentsData }, { data: attData }] = await Promise.all([
+        supabase
+          .from("estudiantes")
+          .select("id, nombres, apellidos, nombres_completos, codigo_qr, cedula")
+          .eq("curso_id", courseId)
+          .eq("activo", true)
+          .order("apellidos"),
+        supabase
+          .from("asistencias")
+          .select("estudiante_id, estado, hora")
+          .eq("curso_id", courseId)
+          .eq("fecha", todayIso),
+      ]);
+
+      const attMap = new Map<string, { estado: string; hora: string }>();
+      (attData || []).forEach((a: any) => {
+        attMap.set(a.estudiante_id, {
+          estado: a.estado,
+          hora: a.hora ? String(a.hora).slice(0, 5) : "--:--",
+        });
+      });
+
+      const items: AttendanceStudentItem[] = (studentsData || []).map((st: any) => {
+        const existing = attMap.get(st.id);
+        return {
+          id: st.id,
+          name: st.nombres_completos || `${st.apellidos} ${st.nombres}`,
+          codigoQr: st.codigo_qr || `PICH-${st.cedula}`,
+          state: (existing?.estado as AttendanceStudentItem["state"]) || "AUSENTE",
+          time: existing?.hora || "Sin registro",
+        };
+      });
+
+      setAttendanceList(items);
+    } catch (err) {
+      console.error("Error loading attendance list:", err);
+    } finally {
+      setLoadingList(false);
+    }
+  }, [courseId, todayIso]);
+
   useEffect(() => {
     setActiveDate(
       new Date().toLocaleDateString("es-EC", {
@@ -79,37 +130,65 @@ export function DynamicQRGenerator({ classNameTitle, classCode }: DynamicQRGener
     generateQRCode();
   }, [classCode]);
 
+  useEffect(() => {
+    loadCourseAttendance();
+  }, [loadCourseAttendance]);
+
   const handleCopyCode = () => {
     navigator.clipboard.writeText(token);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const toggleStatus = (id: number) => {
+  const toggleStatus = async (studentId: string) => {
+    if (!courseId) return;
+    const current = attendanceList.find((i) => i.id === studentId);
+    if (!current) return;
+
+    const nextState: AttendanceStudentItem["state"] =
+      current.state === "PRESENTE"
+        ? "ATRASO"
+        : current.state === "ATRASO"
+        ? "AUSENTE"
+        : "PRESENTE";
+
+    const nowTime = new Date().toTimeString().slice(0, 8);
+    setSavingId(studentId);
+
     setAttendanceList((prev) =>
-      prev.map((item) => {
-        if (item.id === id) {
-          const nextState =
-            item.state === "presente"
-              ? "atraso"
-              : item.state === "atraso"
-              ? "falta"
-              : "presente";
-          return { ...item, state: nextState };
-        }
-        return item;
-      })
+      prev.map((item) =>
+        item.id === studentId
+          ? { ...item, state: nextState, time: nowTime.slice(0, 5) }
+          : item
+      )
     );
+
+    try {
+      await (supabase.from("asistencias") as any).upsert(
+        {
+          estudiante_id: studentId,
+          curso_id: courseId,
+          fecha: todayIso,
+          hora: nowTime,
+          estado: nextState,
+          metodo: "MANUAL",
+          dispositivo_origen: "Web-Docente-Rapido",
+        },
+        { onConflict: "estudiante_id,fecha,curso_id" }
+      );
+    } catch (err) {
+      console.error("Error updating attendance:", err);
+    } finally {
+      setSavingId(null);
+    }
   };
 
-  const presentesCount = attendanceList.filter((a) => a.state === "presente").length;
-  const atrasosCount = attendanceList.filter((a) => a.state === "atraso").length;
-  const faltasCount = attendanceList.filter((a) => a.state === "falta").length;
+  const presentesCount = attendanceList.filter((a) => a.state === "PRESENTE").length;
+  const atrasosCount = attendanceList.filter((a) => a.state === "ATRASO").length;
+  const faltasCount = attendanceList.filter((a) => a.state === "AUSENTE").length;
 
   return (
     <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200 shadow-sm space-y-6">
-      
-      {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-5 border-b border-slate-100">
         <div>
           <div className="flex items-center gap-2 mb-1">
@@ -138,16 +217,13 @@ export function DynamicQRGenerator({ classNameTitle, classCode }: DynamicQRGener
         </button>
       </div>
 
-      {/* Main Grid: QR Container & Attendance List */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        
-        {/* QR Card Container */}
         <div className="lg:col-span-5 bg-slate-50 p-6 rounded-2xl border border-slate-200 flex flex-col items-center text-center">
           <span className="text-xs font-bold text-slate-700 mb-1">
             Código QR de Asistencia Diaria
           </span>
           <p className="text-[11px] text-slate-500 mb-4 max-w-xs">
-            Proyecte este código en el aula o escanee con la tablet docente para registrar la presencia de los estudiantes al ingresar.
+            Proyecte este código en el aula o escanee con la app móvil para registrar la presencia de los estudiantes al ingresar.
           </p>
 
           <div className="p-3 bg-white rounded-2xl shadow-md border border-slate-200 mb-4">
@@ -164,7 +240,6 @@ export function DynamicQRGenerator({ classNameTitle, classCode }: DynamicQRGener
             )}
           </div>
 
-          {/* Backup PIN */}
           <div className="w-full flex items-center justify-between p-3 rounded-xl bg-white border border-slate-200 text-xs">
             <div className="text-left">
               <span className="text-[11px] text-slate-500 block">Código PIN Manual del Aula:</span>
@@ -182,10 +257,7 @@ export function DynamicQRGenerator({ classNameTitle, classCode }: DynamicQRGener
           </div>
         </div>
 
-        {/* Student Attendance Quick Tally & List */}
         <div className="lg:col-span-7 space-y-4">
-          
-          {/* Counters bar */}
           <div className="grid grid-cols-3 gap-3 text-center">
             <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200">
               <span className="text-[10px] font-bold text-emerald-800 uppercase block">Presentes</span>
@@ -206,50 +278,64 @@ export function DynamicQRGenerator({ classNameTitle, classCode }: DynamicQRGener
             </div>
           </div>
 
-          {/* Quick List */}
           <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
             <div className="flex items-center justify-between text-xs font-bold text-slate-700 mb-3">
               <span>Registro de Asistencia del Aula (Clic para cambiar estado):</span>
               <span className="text-slate-500 font-normal">{attendanceList.length} Alumnos en nómina</span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-              {attendanceList.map((st) => (
-                <div
-                  key={st.id}
-                  onClick={() => toggleStatus(st.id)}
-                  className="flex items-center justify-between p-2.5 rounded-xl bg-white border border-slate-200 hover:border-blue-400 cursor-pointer shadow-sm transition-all"
-                >
-                  <div className="truncate pr-2">
-                    <span className="font-bold text-slate-800 block truncate">{st.name}</span>
-                    <span className="text-[10px] text-slate-400">{st.time}</span>
-                  </div>
-
-                  <span
-                    className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider shrink-0 ${
-                      st.state === "presente"
-                        ? "bg-emerald-100 text-emerald-800"
-                        : st.state === "atraso"
-                        ? "bg-amber-100 text-amber-800"
-                        : "bg-rose-100 text-rose-800"
-                    }`}
+            {loadingList ? (
+              <div className="p-6 text-center bg-white rounded-xl border border-slate-200 flex items-center justify-center gap-2 text-xs text-slate-500">
+                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                <span>Sincronizando nómina de asistencia...</span>
+              </div>
+            ) : attendanceList.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs max-h-64 overflow-y-auto pr-1">
+                {attendanceList.map((st) => (
+                  <div
+                    key={st.id}
+                    onClick={() => toggleStatus(st.id)}
+                    className="flex items-center justify-between p-2.5 rounded-xl bg-white border border-slate-200 hover:border-blue-400 cursor-pointer shadow-sm transition-all"
                   >
-                    {st.state}
-                  </span>
-                </div>
-              ))}
-            </div>
+                    <div className="truncate pr-2">
+                      <span className="font-bold text-slate-800 block truncate">{st.name}</span>
+                      <span className="text-[10px] text-slate-400">{st.time}</span>
+                    </div>
+
+                    <span
+                      className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider shrink-0 ${
+                        savingId === st.id
+                          ? "bg-blue-100 text-blue-700"
+                          : st.state === "PRESENTE"
+                          ? "bg-emerald-100 text-emerald-800"
+                          : st.state === "ATRASO"
+                          ? "bg-amber-100 text-amber-800"
+                          : "bg-rose-100 text-rose-800"
+                      }`}
+                    >
+                      {st.state}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="p-6 text-center bg-white rounded-xl border border-dashed border-slate-300">
+                <Users className="w-8 h-8 text-slate-400 mx-auto mb-2" />
+                <p className="text-xs font-bold text-slate-700">
+                  No hay estudiantes matriculados en este curso
+                </p>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Agregue estudiantes desde Gestión de Estudiantes para registrar asistencia.
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="text-[11px] text-slate-500 flex items-center gap-1.5 p-2 bg-blue-50/60 rounded-xl border border-blue-100">
             <Clock className="w-3.5 h-3.5 text-blue-700 shrink-0" />
-            <span>
-              Las faltas injustificadas se reportan automáticamente al informe de Inspección y al DECE al cierre de la primera hora de clase (07:45 AM).
-            </span>
+            <span>Los cambios de estado se guardan directamente en Supabase para el día {todayIso}.</span>
           </div>
-
         </div>
-
       </div>
     </div>
   );

@@ -178,14 +178,14 @@ export const PARENT_ANNOUNCEMENTS: ParentAnnouncement[] = [
   },
 ];
 
-// 3. CURSOS / PARALELOS DISPONIBLES EN LA ESCUELA
+// 3. CURSOS / GRADOS DISPONIBLES EN LA ESCUELA (Sin división por Paralelos)
 export const SCHOOL_CLASSES: SchoolClassInfo[] = [
   {
-    id: "cls-5a",
-    code: "5TO-EGB-A",
-    name: "5to Grado de Educación General Básica",
+    id: "cls-5",
+    code: "5.º EGB",
+    name: "5.º Grado de Educación General Básica",
     sublevel: "Básica Media",
-    parallel: "Paralelo A",
+    parallel: "Único",
     tutorName: "Lic. María Elena Guamán",
     studentCount: 28,
     room: "Aula Bloque 2 - Planta Alta",
@@ -193,11 +193,11 @@ export const SCHOOL_CLASSES: SchoolClassInfo[] = [
     attendanceRate: 91.2,
   },
   {
-    id: "cls-6a",
-    code: "6TO-EGB-A",
-    name: "6to Grado de Educación General Básica",
+    id: "cls-6",
+    code: "6.º EGB",
+    name: "6.º Grado de Educación General Básica",
     sublevel: "Básica Media",
-    parallel: "Paralelo A",
+    parallel: "Único",
     tutorName: "Prof. Milton Carlos Alomoto",
     studentCount: 26,
     room: "Aula Bloque 2 - Planta Baja",
@@ -205,11 +205,11 @@ export const SCHOOL_CLASSES: SchoolClassInfo[] = [
     attendanceRate: 93.5,
   },
   {
-    id: "cls-7b",
-    code: "7MO-EGB-B",
-    name: "7mo Grado de Educación General Básica",
+    id: "cls-7",
+    code: "7.º EGB",
+    name: "7.º Grado de Educación General Básica",
     sublevel: "Básica Media",
-    parallel: "Paralelo B",
+    parallel: "Único",
     tutorName: "Lic. Rosa Elvira Chiluisa",
     studentCount: 29,
     room: "Aula Bloque 3",

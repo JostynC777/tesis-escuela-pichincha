@@ -1,9 +1,26 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { StudentGradeRecord } from "@/lib/mockData";
 import { formatGrade, getMinEducGradeScale } from "@/lib/utils";
-import { X, Save, Calculator, AlertCircle, School } from "lucide-react";
+import { X, Save, Calculator } from "lucide-react";
+
+export interface StudentGradeRecord {
+  id: string;
+  studentCode: string;
+  studentName: string;
+  gradeAndSection: string;
+  parentName: string;
+  parentPhone: string;
+  trimestre1: number;
+  trimestre2: number;
+  trimestre3: number;
+  promedioAnual: number;
+  asistenciaPorcentaje: number;
+  faltasInjustificadas?: number;
+  escalaMinEduc: "DAR" | "AAR" | "PAAR" | "NAAR";
+  alertaRiesgo: "normal" | "moderado" | "critico";
+  motivoAlerta?: string;
+}
 
 interface GradeEditorModalProps {
   student: StudentGradeRecord | null;

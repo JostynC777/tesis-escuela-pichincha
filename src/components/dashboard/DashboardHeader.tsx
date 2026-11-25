@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
 import {
   Menu,
   Bell,
@@ -10,6 +11,15 @@ import {
   School,
   ChevronDown,
 } from "lucide-react";
+
+function getInitials(name: string | undefined | null): string {
+  if (!name) return "DOC";
+  const clean = name.replace(/^(msc\.|lic\.|ing\.|lcda\.|dr\.|dra\.|prof\.)\s+/i, "").trim();
+  const parts = clean.split(" ").filter(Boolean);
+  if (parts.length === 0) return "DOC";
+  if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
 
 interface DashboardHeaderProps {
   onToggleMobileMenu: () => void;
@@ -21,6 +31,71 @@ export function DashboardHeader({ onToggleMobileMenu }: DashboardHeaderProps) {
   const [currentTime, setCurrentTime] = useState<string>("");
   const [currentDate, setCurrentDate] = useState<string>("");
   const [showNotifications, setShowNotifications] = useState(false);
+  const [activeUser, setActiveUser] = useState<{
+    name: string;
+    role: string;
+    email: string;
+  }>({
+    name: "Docente Titular",
+    role: "DOCENTE",
+    email: "",
+  });
+
+  useEffect(() => {
+    async function loadActiveUser() {
+      let email = "";
+      try {
+        const { data } = await supabase.auth.getUser();
+        if (data?.user?.email) email = data.user.email;
+      } catch (err) {}
+
+      if (!email && typeof window !== "undefined") {
+        email =
+          sessionStorage.getItem("escuela_user_email") ||
+          localStorage.getItem("escuela_user_email") ||
+          "";
+        const storedName =
+          sessionStorage.getItem("escuela_user_name") ||
+          localStorage.getItem("escuela_user_name");
+        const storedRole =
+          sessionStorage.getItem("escuela_user_role") ||
+          localStorage.getItem("escuela_user_role");
+        if (storedName) {
+          setActiveUser({
+            name: storedName,
+            role: storedRole || "DOCENTE",
+            email: email,
+          });
+        }
+      }
+
+      if (email) {
+        try {
+          const { data } = await supabase
+            .from("perfiles_usuarios")
+            .select("nombres_completos, rol, correo")
+            .eq("correo", email.trim().toLowerCase())
+            .single();
+
+          const profile = data as {
+            nombres_completos?: string;
+            rol?: string;
+            correo?: string;
+          } | null;
+
+          if (profile) {
+            setActiveUser({
+              name: profile.nombres_completos || "Docente Titular",
+              role: profile.rol || "DOCENTE",
+              email: profile.correo || "",
+            });
+          }
+        } catch (e) {}
+      }
+    }
+
+    loadActiveUser();
+  }, [pathname]);
 
   useEffect(() => {
     const updateDateTime = () => {
@@ -47,6 +122,12 @@ export function DashboardHeader({ onToggleMobileMenu }: DashboardHeaderProps) {
   }, []);
 
   const getPageTitle = () => {
+    if (pathname.includes("/admin/students")) return "Gestión de Estudiantes • Nómina & Carnets QR";
+    if (pathname.includes("/admin/settings")) return "Administración Institucional • Nómina, Cronograma & Métricas";
+    if (pathname === "/dashboard/admin") return "Dashboard de Analítica Directiva • Rectorado Institucional";
+    if (pathname.includes("/teacher/grades")) return "Registro de Calificaciones Trimestrales • Sistema 70/10/20 MINEDUC";
+    if (pathname.includes("/teacher/profile")) return "Perfil Docente • Planificaciones Curriculares & Recursos";
+    if (pathname.includes("/teacher/attendance")) return "Módulo de Asistencia Híbrida • QR Dinámico & Respaldo Manual";
     if (pathname.includes("/teacher")) return "Registro de Calificaciones Trimestrales & Asistencia QR";
     if (pathname.includes("/analytics")) return "Rectorado: Analítica Institucional & Prevención de Deserción";
     if (pathname.includes("/student")) return "Portal de Familias • Consulta de Libretas y Tareas";
@@ -80,42 +161,45 @@ export function DashboardHeader({ onToggleMobileMenu }: DashboardHeaderProps) {
       {/* Right controls */}
       <div className="flex items-center gap-3">
         
-        {/* Quick Role Switcher pills for testing and demonstration */}
-        <div className="hidden lg:flex items-center p-1 rounded-xl bg-slate-100 border border-slate-200 text-xs">
-          <span className="text-[10px] text-slate-500 font-bold uppercase px-2">
-            Ver como:
-          </span>
-          <button
-            onClick={() => router.push("/dashboard/teacher")}
-            className={`px-2.5 py-1 rounded-lg font-bold transition-all ${
-              pathname.includes("/teacher")
-                ? "bg-blue-700 text-white shadow-sm"
-                : "text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            👨‍🏫 Docente
-          </button>
-          <button
-            onClick={() => router.push("/dashboard/analytics")}
-            className={`px-2.5 py-1 rounded-lg font-bold transition-all ${
-              pathname.includes("/analytics")
-                ? "bg-blue-700 text-white shadow-sm"
-                : "text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            🏛️ Rectorado
-          </button>
-          <button
-            onClick={() => router.push("/dashboard/student")}
-            className={`px-2.5 py-1 rounded-lg font-bold transition-all ${
-              pathname.includes("/student")
-                ? "bg-blue-700 text-white shadow-sm"
-                : "text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            👨‍👩‍👦 Familia
-          </button>
-        </div>
+        {/* Quick Role Switcher pills visible only for admin/rectorado */}
+        {(activeUser.role.trim().toLowerCase() === "admin" ||
+          activeUser.role.trim().toLowerCase() === "rectorado") && (
+          <div className="hidden lg:flex items-center p-1 rounded-xl bg-slate-100 border border-slate-200 text-xs">
+            <span className="text-[10px] text-slate-500 font-bold uppercase px-2">
+              Ver como:
+            </span>
+            <button
+              onClick={() => router.push("/dashboard/teacher")}
+              className={`px-2.5 py-1 rounded-lg font-bold transition-all ${
+                pathname.includes("/teacher")
+                  ? "bg-blue-700 text-white shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              Docente
+            </button>
+            <button
+              onClick={() => router.push("/dashboard/analytics")}
+              className={`px-2.5 py-1 rounded-lg font-bold transition-all ${
+                pathname.includes("/analytics")
+                  ? "bg-blue-700 text-white shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              Rectorado
+            </button>
+            <button
+              onClick={() => router.push("/dashboard/student")}
+              className={`px-2.5 py-1 rounded-lg font-bold transition-all ${
+                pathname.includes("/student")
+                  ? "bg-blue-700 text-white shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              Familia
+            </button>
+          </div>
+        )}
 
         {/* Live Clock */}
         <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-mono text-slate-600">
@@ -155,9 +239,22 @@ export function DashboardHeader({ onToggleMobileMenu }: DashboardHeaderProps) {
           )}
         </div>
 
-        {/* User initials */}
-        <div className="w-9 h-9 rounded-xl bg-blue-700 text-white font-bold text-xs flex items-center justify-center shadow-sm">
-          MG
+        {/* Dynamic User Profile Indicator */}
+        <div className="flex items-center gap-2.5 pl-2 border-l border-slate-200">
+          <div className="hidden sm:flex flex-col text-right">
+            <span className="text-xs font-bold text-slate-800 leading-tight">
+              {activeUser.name}
+            </span>
+            <span className="text-[10px] text-blue-700 font-bold uppercase tracking-wider">
+              {activeUser.role}
+            </span>
+          </div>
+          <div
+            className="w-9 h-9 rounded-xl bg-blue-700 text-white font-bold text-xs flex items-center justify-center shadow-sm select-none"
+            title={`${activeUser.name} (${activeUser.email || activeUser.role})`}
+          >
+            {getInitials(activeUser.name)}
+          </div>
         </div>
 
       </div>

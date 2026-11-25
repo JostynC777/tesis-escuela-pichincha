@@ -29,7 +29,7 @@ export function Navbar() {
         <div className="flex items-center justify-between h-20">
           
           {/* School Brand */}
-          <Link href="/" className="flex items-center gap-3 group">
+          <Link href="/portal" className="flex items-center gap-3 group">
             <div className="h-12 w-12 rounded-xl bg-blue-700 text-white flex items-center justify-center shadow-md group-hover:bg-blue-800 transition-colors">
               <School className="w-7 h-7" />
             </div>
@@ -51,27 +51,27 @@ export function Navbar() {
           {/* Desktop Navigation Links */}
           <nav className="hidden md:flex items-center gap-7 text-sm font-semibold text-slate-600">
             <Link
-              href="/#inicio"
+              href="/portal#inicio"
               className="hover:text-blue-700 transition-colors py-1 flex items-center gap-1.5"
             >
               Inicio
             </Link>
             <Link
-              href="/#niveles"
+              href="/portal#niveles"
               className="hover:text-blue-700 transition-colors py-1 flex items-center gap-1.5"
             >
               <BookOpen className="w-4 h-4 text-blue-600" />
               Niveles de Básica
             </Link>
             <Link
-              href="/#comunicados"
+              href="/portal#comunicados"
               className="hover:text-blue-700 transition-colors py-1 flex items-center gap-1.5"
             >
               <Bell className="w-4 h-4 text-amber-600" />
               Comunicados a Padres
             </Link>
             <Link
-              href="/#institucion"
+              href="/portal#institucion"
               className="hover:text-blue-700 transition-colors py-1 flex items-center gap-1.5"
             >
               <Shield className="w-4 h-4 text-emerald-600" />

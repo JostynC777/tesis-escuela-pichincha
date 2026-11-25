@@ -7,3 +7,13 @@ build/
 *.tsbuildinfo
 npm-debug.log*
 .vercel/
+database/schema.sql
+database/sincronizar_nomina_exacta.sql
+database/supabase_schema_completo.sql
+supabase_schema_completo.sql
+supabase/sincronizar_nomina_oficial.sql
+scripts/generar_sql_nomina.mjs
+build_entregable_2.js
+build_perfect_doc.js
+build_word_thesis.js
+generar_entregable_2.py
