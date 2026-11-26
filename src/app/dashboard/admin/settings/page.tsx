@@ -7,8 +7,9 @@ import {
   PerfilUsuario,
   Curso,
   Asignatura,
-  DocenteAsignaturaCurso,
+  Estudiante,
 } from "@/types/database.types";
+import { StudentIdCardModal } from "@/components/dashboard/StudentIdCard";
 import {
   Settings,
   Users,
@@ -42,21 +43,34 @@ import {
   UserPlus,
   Sparkles,
   RefreshCw,
+  FolderOpen,
+  QrCode,
+  ShieldAlert,
 } from "lucide-react";
 
 export default function AdminSettingsPage() {
-  const [activeTab, setActiveTab] = useState<"docentes" | "cursos" | "asignaturas" | "evaluacion">("docentes");
+  const [activeTab, setActiveTab] = useState<
+    "docentes" | "estudiantes" | "dece" | "cursos" | "asignaturas" | "evaluacion"
+  >("docentes");
 
   // Datos principales
   const [teachers, setTeachers] = useState<PerfilUsuario[]>([]);
   const [courses, setCourses] = useState<Curso[]>([]);
   const [subjects, setSubjects] = useState<Asignatura[]>([]);
   const [assignments, setAssignments] = useState<any[]>([]);
+  const [students, setStudents] = useState<Estudiante[]>([]);
+  const [deceAlerts, setDeceAlerts] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
   // Modales
   const [showTeacherModal, setShowTeacherModal] = useState<boolean>(false);
   const [editingTeacher, setEditingTeacher] = useState<PerfilUsuario | null>(null);
+
+  const [driveModalTeacher, setDriveModalTeacher] = useState<PerfilUsuario | null>(null);
+  const [driveUrlDraft, setDriveUrlDraft] = useState<string>("");
+  const [savingDrive, setSavingDrive] = useState<boolean>(false);
+
+  const [activeStudentForCard, setActiveStudentForCard] = useState<any | null>(null);
 
   const [showCourseModal, setShowCourseModal] = useState<boolean>(false);
   const [editingCourse, setEditingCourse] = useState<Curso | null>(null);
@@ -71,6 +85,10 @@ export default function AdminSettingsPage() {
 
   // Filtros
   const [teacherSearch, setTeacherSearch] = useState<string>("");
+  const [studentSearch, setStudentSearch] = useState<string>("");
+  const [studentCourseFilter, setStudentCourseFilter] = useState<string>("ALL");
+  const [deceStatusFilter, setDeceStatusFilter] = useState<string>("TODOS");
+  const [deceRiskFilter, setDeceRiskFilter] = useState<string>("TODOS");
   const [courseSearch, setCourseSearch] = useState<string>("");
   const [subjectSearch, setSubjectSearch] = useState<string>("");
 
@@ -86,17 +104,21 @@ export default function AdminSettingsPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [tRes, cRes, sRes, dacRes] = await Promise.all([
+      const [tRes, cRes, sRes, dacRes, stRes, deceRes] = await Promise.all([
         supabase.from("perfiles_usuarios").select("*").order("nombres_completos"),
         supabase.from("cursos").select("*, tutor:perfiles_usuarios(id, nombres_completos)").order("orden"),
         supabase.from("asignaturas").select("*").order("nombre"),
         supabase.from("docente_asignatura_curso").select("*, docente:perfiles_usuarios(nombres_completos, correo), asignatura:asignaturas(nombre), curso:cursos(nombre)"),
+        supabase.from("estudiantes").select("*, curso:cursos(id, nombre), tutor:perfiles_usuarios(id, nombres_completos)").eq("activo", true).order("apellidos"),
+        (supabase as any).from("alertas_dece").select("*, estudiante:estudiantes(nombres, apellidos, cedula), curso:cursos(nombre)").order("created_at", { ascending: false }),
       ]);
 
       if (tRes.data) setTeachers(tRes.data as unknown as PerfilUsuario[]);
       if (cRes.data) setCourses(cRes.data as unknown as Curso[]);
       if (sRes.data) setSubjects(sRes.data as unknown as Asignatura[]);
       if (dacRes.data) setAssignments(dacRes.data as any[]);
+      if (stRes.data) setStudents(stRes.data as unknown as Estudiante[]);
+      if (!deceRes.error && deceRes.data) setDeceAlerts(deceRes.data as any[]);
     } catch (err: any) {
       console.error("Error al cargar datos de administracion:", err);
       showToast("Error de conexion al cargar datos", "error");
@@ -108,6 +130,46 @@ export default function AdminSettingsPage() {
   useEffect(() => {
     fetchData();
   }, []);
+
+  const handleSaveDriveUrl = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!driveModalTeacher) return;
+    const clean = driveUrlDraft.trim();
+    if (clean && !/^https?:\/\//i.test(clean)) {
+      showToast("Ingresa una URL válida que comience con http:// o https://", "error");
+      return;
+    }
+    setSavingDrive(true);
+    try {
+      const { error } = await (supabase.from("perfiles_usuarios") as any)
+        .update({ carpeta_drive_url: clean || null, updated_at: new Date().toISOString() })
+        .eq("id", driveModalTeacher.id);
+      if (error) throw error;
+      showToast("Carpeta de Google Drive actualizada", "success");
+      setDriveModalTeacher(null);
+      await fetchData();
+    } catch (err: any) {
+      showToast("Error al guardar carpeta Drive: " + (err?.message || ""), "error");
+    } finally {
+      setSavingDrive(false);
+    }
+  };
+
+  const handleUpdateDeceStatus = async (alertId: string, newStatus: "EN_SEGUIMIENTO" | "RESUELTA") => {
+    try {
+      const { error } = await (supabase as any)
+        .from("alertas_dece")
+        .update({ estado: newStatus })
+        .eq("id", alertId);
+      if (error) throw error;
+      setDeceAlerts((prev) =>
+        prev.map((a) => (a.id === alertId ? { ...a, estado: newStatus } : a))
+      );
+      showToast(`Alerta DECE actualizada a ${newStatus}`, "success");
+    } catch (err: any) {
+      showToast("Error al actualizar alerta: " + (err?.message || ""), "error");
+    }
+  };
 
   // --------------------------------------------------------------------------
   // DOCENTES: GUARDAR / CREAR / EDITAR
@@ -368,21 +430,14 @@ export default function AdminSettingsPage() {
             <span>Rectorado y Dirección • Gestión Integral</span>
           </div>
           <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-            Administración Académica e Institucional
+            Gestión Institucional Unificada
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Mantenimiento general de Docentes, Cursos, Materias, Asignaciones de Carga y Enlace Directo a Microsoft Teams.
+            Panel integral para Dirección: Docentes, Carpetas Drive, Nómina de Estudiantes, Alertas DECE, Cursos y Materias.
           </p>
         </div>
 
         <div className="flex items-center gap-2">
-          <Link
-            href="/dashboard/admin/students"
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
-          >
-            <GraduationCap className="w-4 h-4 text-blue-700" />
-            <span>Gestión Estudiantes</span>
-          </Link>
           <button
             onClick={fetchData}
             className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100 transition-colors"
@@ -394,53 +449,77 @@ export default function AdminSettingsPage() {
       </div>
 
       {/* Navegación por Pestañas */}
-      <div className="flex border-b border-slate-200 bg-white rounded-xl p-1 gap-1 shadow-xs">
+      <div className="flex flex-wrap border-b border-slate-200 bg-white rounded-xl p-1 gap-1 shadow-xs">
         <button
           onClick={() => setActiveTab("docentes")}
-          className={`flex-1 py-2.5 px-4 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-2 ${
+          className={`flex-1 min-w-[140px] py-2.5 px-3 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-1.5 ${
             activeTab === "docentes"
               ? "bg-blue-700 text-white shadow-sm"
               : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
           }`}
         >
           <Users className="w-4 h-4" />
-          <span>Docentes ({teachers.length})</span>
+          <span>Docentes y Asignaciones ({teachers.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab("estudiantes")}
+          className={`flex-1 min-w-[140px] py-2.5 px-3 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-1.5 ${
+            activeTab === "estudiantes"
+              ? "bg-blue-700 text-white shadow-sm"
+              : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+          }`}
+        >
+          <GraduationCap className="w-4 h-4" />
+          <span>Nómina de Estudiantes ({students.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab("dece")}
+          className={`flex-1 min-w-[120px] py-2.5 px-3 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-1.5 ${
+            activeTab === "dece"
+              ? "bg-blue-700 text-white shadow-sm"
+              : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+          }`}
+        >
+          <ShieldAlert className="w-4 h-4" />
+          <span>Alertas DECE ({deceAlerts.length})</span>
         </button>
 
         <button
           onClick={() => setActiveTab("cursos")}
-          className={`flex-1 py-2.5 px-4 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-2 ${
+          className={`flex-1 min-w-[120px] py-2.5 px-3 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-1.5 ${
             activeTab === "cursos"
               ? "bg-blue-700 text-white shadow-sm"
               : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
           }`}
         >
           <School className="w-4 h-4" />
-          <span>Grados y Cursos ({courses.length})</span>
+          <span>Cursos ({courses.length})</span>
         </button>
 
         <button
           onClick={() => setActiveTab("asignaturas")}
-          className={`flex-1 py-2.5 px-4 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-2 ${
+          className={`flex-1 min-w-[120px] py-2.5 px-3 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-1.5 ${
             activeTab === "asignaturas"
               ? "bg-blue-700 text-white shadow-sm"
               : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
           }`}
         >
           <BookOpen className="w-4 h-4" />
-          <span>Materias / Asignaturas ({subjects.length})</span>
+          <span>Materias ({subjects.length})</span>
         </button>
 
         <button
           onClick={() => setActiveTab("evaluacion")}
-          className={`flex-1 py-2.5 px-4 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-2 ${
+          className={`flex-1 min-w-[130px] py-2.5 px-3 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-1.5 ${
             activeTab === "evaluacion"
               ? "bg-blue-700 text-white shadow-sm"
               : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
           }`}
         >
           <Award className="w-4 h-4" />
-          <span>Cronograma & 70/10/20</span>
+          <span>Cronograma 70/10/20</span>
         </button>
       </div>
 
@@ -547,6 +626,66 @@ export default function AdminSettingsPage() {
                           {doc.titulo_academico}
                         </div>
                       )}
+
+                      {/* Cursos y Asignaturas asignadas */}
+                      {(() => {
+                        const docAssigns = assignments.filter((a) => a.docente_id === doc.id);
+                        return (
+                          <div className="pt-2 border-t border-slate-100">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                              Carga asignada ({docAssigns.length}):
+                            </span>
+                            {docAssigns.length > 0 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {docAssigns.slice(0, 4).map((a) => (
+                                  <span
+                                    key={a.id}
+                                    className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-semibold"
+                                  >
+                                    {a.curso?.nombre || "Curso"} • {a.asignatura?.nombre || "Materia"}
+                                  </span>
+                                ))}
+                                {docAssigns.length > 4 && (
+                                  <span className="text-[10px] text-blue-700 font-bold">
+                                    +{docAssigns.length - 4} más
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-[10px] text-slate-400 italic">
+                                Sin asignaturas registradas
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
+
+                      {/* Estado de Carpeta Drive */}
+                      <div className="pt-2 flex items-center justify-between gap-2">
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            doc.carpeta_drive_url
+                              ? "bg-emerald-100 text-emerald-800"
+                              : "bg-amber-100 text-amber-800"
+                          }`}
+                        >
+                          <FolderOpen className="w-3 h-3" />
+                          <span>
+                            {doc.carpeta_drive_url ? "Drive vinculado" : "Sin carpeta Drive"}
+                          </span>
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDriveModalTeacher(doc);
+                            setDriveUrlDraft(doc.carpeta_drive_url || "");
+                          }}
+                          className="text-[11px] font-bold text-blue-700 hover:underline"
+                        >
+                          Editar Carpeta Drive
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -577,6 +716,242 @@ export default function AdminSettingsPage() {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* PESTAÑA: NÓMINA DE ESTUDIANTES                                            */}
+      {/* ========================================================================= */}
+      {activeTab === "estudiantes" && (
+        <div className="space-y-4">
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-3">
+            <div className="relative w-full md:w-80">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Buscar estudiante por nombre o cédula..."
+                value={studentSearch}
+                onChange={(e) => setStudentSearch(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600 font-medium"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 w-full md:w-auto">
+              <select
+                value={studentCourseFilter}
+                onChange={(e) => setStudentCourseFilter(e.target.value)}
+                className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700"
+              >
+                <option value="ALL">Todos los Cursos ({courses.length})</option>
+                {courses.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.nombre}
+                  </option>
+                ))}
+              </select>
+              <Link
+                href="/dashboard/admin/students"
+                className="px-3.5 py-2 rounded-xl bg-blue-700 hover:bg-blue-800 text-white text-xs font-bold whitespace-nowrap"
+              >
+                Importar / CRUD Completo
+              </Link>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase text-[10px] font-bold">
+                    <th className="py-3 px-4">Estudiante</th>
+                    <th className="py-3 px-4">Cédula</th>
+                    <th className="py-3 px-4">Curso</th>
+                    <th className="py-3 px-4">Código QR</th>
+                    <th className="py-3 px-4 text-right">Carnet QR</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {students
+                    .filter((st) => {
+                      const matchesSearch =
+                        `${st.apellidos} ${st.nombres} ${st.cedula}`
+                          .toLowerCase()
+                          .includes(studentSearch.toLowerCase());
+                      const matchesCourse =
+                        studentCourseFilter === "ALL" || st.curso_id === studentCourseFilter;
+                      return matchesSearch && matchesCourse;
+                    })
+                    .map((st) => (
+                      <tr key={st.id} className="hover:bg-slate-50">
+                        <td className="py-3 px-4 font-bold text-slate-900">
+                          {st.apellidos} {st.nombres}
+                        </td>
+                        <td className="py-3 px-4 font-mono text-slate-700">{st.cedula}</td>
+                        <td className="py-3 px-4">
+                          <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-800 font-bold text-[11px]">
+                            {st.curso?.nombre || "Sin curso"}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 font-mono text-[11px] text-slate-500">
+                          {st.codigo_qr}
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setActiveStudentForCard({
+                                id: st.id,
+                                cedula: st.cedula,
+                                nombres: st.nombres,
+                                apellidos: st.apellidos,
+                                codigo_qr: st.codigo_qr,
+                                curso_nombre: st.curso?.nombre,
+                                tutor_nombre: st.tutor?.nombres_completos,
+                              })
+                            }
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 font-bold text-[11px]"
+                          >
+                            <QrCode className="w-3.5 h-3.5" />
+                            <span>Ver Carnet</span>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* PESTAÑA: ALERTAS DECE                                                     */}
+      {/* ========================================================================= */}
+      {activeTab === "dece" && (
+        <div className="space-y-4">
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={deceStatusFilter}
+                onChange={(e) => setDeceStatusFilter(e.target.value)}
+                className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700"
+              >
+                <option value="TODOS">Todos los Estados</option>
+                <option value="ABIERTA">Abierta</option>
+                <option value="EN_SEGUIMIENTO">En Seguimiento</option>
+                <option value="RESUELTA">Resuelta</option>
+              </select>
+
+              <select
+                value={deceRiskFilter}
+                onChange={(e) => setDeceRiskFilter(e.target.value)}
+                className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700"
+              >
+                <option value="TODOS">Todos los Riesgos</option>
+                <option value="CRITICO">Crítico</option>
+                <option value="MODERADO">Moderado</option>
+                <option value="LEVE">Leve</option>
+              </select>
+            </div>
+
+            <Link
+              href="/dashboard/analytics"
+              className="px-3.5 py-2 rounded-xl bg-rose-700 hover:bg-rose-800 text-white text-xs font-bold"
+            >
+              Abrir Analítica Completa
+            </Link>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase text-[10px] font-bold">
+                    <th className="py-3 px-4">Estudiante & Curso</th>
+                    <th className="py-3 px-4">Tipo / Riesgo</th>
+                    <th className="py-3 px-4">Asunto / Comunicado</th>
+                    <th className="py-3 px-4 text-center">Estado</th>
+                    <th className="py-3 px-4 text-right">Seguimiento</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {deceAlerts
+                    .filter((a) => {
+                      const okStatus = deceStatusFilter === "TODOS" || a.estado === deceStatusFilter;
+                      const okRisk = deceRiskFilter === "TODOS" || a.nivel_riesgo === deceRiskFilter;
+                      return okStatus && okRisk;
+                    })
+                    .map((a) => (
+                      <tr key={a.id} className="hover:bg-slate-50">
+                        <td className="py-3 px-4">
+                          <span className="font-bold text-slate-900 block">
+                            {a.estudiante
+                              ? `${a.estudiante.apellidos} ${a.estudiante.nombres}`
+                              : "Estudiante"}
+                          </span>
+                          <span className="text-[11px] text-blue-700">
+                            {a.curso?.nombre || "Curso"}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className="font-bold block text-[11px]">{a.tipo_alerta}</span>
+                          <span
+                            className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold mt-0.5 ${
+                              a.nivel_riesgo === "CRITICO"
+                                ? "bg-rose-100 text-rose-800"
+                                : a.nivel_riesgo === "MODERADO"
+                                ? "bg-amber-100 text-amber-800"
+                                : "bg-slate-100 text-slate-700"
+                            }`}
+                          >
+                            {a.nivel_riesgo}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 max-w-md">
+                          <span className="font-bold text-slate-900 block">{a.asunto}</span>
+                          <span className="text-[11px] text-slate-600 line-clamp-2">
+                            {a.comunicado}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              a.estado === "RESUELTA"
+                                ? "bg-emerald-100 text-emerald-800"
+                                : a.estado === "EN_SEGUIMIENTO"
+                                ? "bg-amber-100 text-amber-800"
+                                : "bg-rose-100 text-rose-800"
+                            }`}
+                          >
+                            {String(a.estado).replace("_", " ")}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right space-x-1.5 whitespace-nowrap">
+                          {a.estado === "ABIERTA" && (
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateDeceStatus(a.id, "EN_SEGUIMIENTO")}
+                              className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-[11px] font-bold"
+                            >
+                              Seguimiento
+                            </button>
+                          )}
+                          {a.estado !== "RESUELTA" && (
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateDeceStatus(a.id, "RESUELTA")}
+                              className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[11px] font-bold"
+                            >
+                              Resolver
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
@@ -1117,6 +1492,86 @@ export default function AdminSettingsPage() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: EDITAR CARPETA DRIVE DEL DOCENTE                                   */}
+      {/* ========================================================================= */}
+      {driveModalTeacher && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50">
+              <div className="flex items-center gap-2">
+                <FolderOpen className="w-5 h-5 text-amber-600" />
+                <h3 className="text-sm font-bold text-slate-900">
+                  Carpeta Google Drive • {driveModalTeacher.nombres_completos}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDriveModalTeacher(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveDriveUrl} className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Enlace de Carpeta Google Drive (`carpeta_drive_url`):
+                </label>
+                <input
+                  type="url"
+                  value={driveUrlDraft}
+                  onChange={(e) => setDriveUrlDraft(e.target.value)}
+                  placeholder="https://drive.google.com/drive/folders/..."
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-mono"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Deja vacío para desvincular la carpeta. Solo este docente verá este enlace en su módulo de Planificaciones.
+                </p>
+              </div>
+
+              {driveUrlDraft.trim() && /^https?:\/\//i.test(driveUrlDraft.trim()) && (
+                <a
+                  href={driveUrlDraft.trim()}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-700 hover:underline"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Probar enlace en nueva pestaña</span>
+                </a>
+              )}
+
+              <div className="flex justify-end gap-2.5 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setDriveModalTeacher(null)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingDrive}
+                  className="px-5 py-2 text-xs font-bold text-white bg-blue-700 hover:bg-blue-800 rounded-xl shadow-sm disabled:opacity-50"
+                >
+                  {savingDrive ? "Guardando..." : "Guardar Carpeta"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Carnet QR */}
+      {activeStudentForCard && (
+        <StudentIdCardModal
+          student={activeStudentForCard}
+          onClose={() => setActiveStudentForCard(null)}
+        />
       )}
 
       {/* ========================================================================= */}

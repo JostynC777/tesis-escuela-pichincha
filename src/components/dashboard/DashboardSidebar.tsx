@@ -28,6 +28,7 @@ import {
   BookOpen,
   TrendingUp,
   Users,
+  CalendarClock,
 } from "lucide-react";
 
 interface DashboardSidebarProps {
@@ -140,6 +141,12 @@ export function DashboardSidebar({ mobileOpen, onCloseMobile }: DashboardSidebar
       badge: "PDF Semanal",
     },
     {
+      name: "Horarios de Clases",
+      href: "/dashboard/horarios",
+      icon: CalendarClock,
+      badge: "PDF / Excel",
+    },
+    {
       name: "Mi Perfil Docente",
       href: "/dashboard/teacher/profile",
       icon: UserCheck,
@@ -171,10 +178,10 @@ export function DashboardSidebar({ mobileOpen, onCloseMobile }: DashboardSidebar
       badge: "Estudiante",
     },
     {
-      name: "Ajustes Institucionales",
+      name: "Gestión Institucional",
       href: "/dashboard/admin/settings",
       icon: Settings,
-      badge: "Admin",
+      badge: "Directora",
       adminOnly: true,
     },
   ];

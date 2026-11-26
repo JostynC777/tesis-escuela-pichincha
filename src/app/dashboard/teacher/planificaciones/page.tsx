@@ -116,6 +116,8 @@ export default function PlanificacionesSemanalesPage() {
   const [currentUserId, setCurrentUserId] = useState<string>("");
   const [currentUserRole, setCurrentUserRole] = useState<string>("docente");
   const [currentUserName, setCurrentUserName] = useState<string>("Docente");
+  const [carpetaDriveUrl, setCarpetaDriveUrl] = useState<string | null>(null);
+  const [roleLoaded, setRoleLoaded] = useState<boolean>(false);
 
   // Filtros
   const [selectedWeekFilter, setSelectedWeekFilter] = useState<string>("ALL");
@@ -172,19 +174,28 @@ export default function PlanificacionesSemanalesPage() {
       if (email) {
         const { data: uData } = await supabase
           .from("perfiles_usuarios")
-          .select("id, nombres_completos, rol, correo")
+          .select("id, nombres_completos, rol, correo, carpeta_drive_url")
           .eq("correo", email.trim().toLowerCase())
           .single();
 
         if (uData) {
-          const profile = uData as any;
+          const profile = uData as {
+            id: string;
+            nombres_completos?: string;
+            rol?: string;
+            correo?: string;
+            carpeta_drive_url?: string | null;
+          };
           activeTeacherId = profile.id;
-          activeRole = profile.rol || "docente";
+          activeRole = String(profile.rol || "docente").trim().toLowerCase();
           setCurrentUserId(profile.id);
-          setCurrentUserRole(profile.rol);
+          setCurrentUserRole(activeRole);
           setCurrentUserName(profile.nombres_completos || "Docente");
+          const cleanDrive = profile.carpeta_drive_url?.trim() || null;
+          setCarpetaDriveUrl(cleanDrive);
         }
       }
+      setRoleLoaded(true);
 
       // 2. Cargar cursos, asignaturas, docentes y planificaciones
       const [coursesRes, subjectsRes, teachersRes, plansRes] = await Promise.all([
@@ -509,16 +520,50 @@ export default function PlanificacionesSemanalesPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          <a
-            href={INSTITUTIONAL_DRIVE_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl transition-colors shadow-sm"
-          >
-            <FolderOpen className="w-4 h-4 text-amber-600" />
-            <span>Repositorio Drive Institucional</span>
-            <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
-          </a>
+          {(() => {
+            const normalizedRole = currentUserRole.trim().toLowerCase();
+            const isDirective =
+              roleLoaded &&
+              (normalizedRole === "directora" ||
+                normalizedRole === "admin" ||
+                normalizedRole === "rectorado");
+            const hasValidTeacherDrive =
+              roleLoaded &&
+              normalizedRole === "docente" &&
+              Boolean(carpetaDriveUrl && /^https?:\/\//i.test(carpetaDriveUrl));
+
+            if (isDirective) {
+              return (
+                <a
+                  href={INSTITUTIONAL_DRIVE_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl transition-colors shadow-sm"
+                >
+                  <FolderOpen className="w-4 h-4 text-amber-600" />
+                  <span>Repositorio Drive Institucional</span>
+                  <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
+                </a>
+              );
+            }
+
+            if (hasValidTeacherDrive && carpetaDriveUrl) {
+              return (
+                <a
+                  href={carpetaDriveUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl transition-colors shadow-sm"
+                >
+                  <FolderOpen className="w-4 h-4 text-amber-600" />
+                  <span>Mi Carpeta de Drive</span>
+                  <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
+                </a>
+              );
+            }
+
+            return null;
+          })()}
 
           <button
             onClick={() => {

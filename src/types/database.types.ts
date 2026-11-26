@@ -57,6 +57,7 @@ export interface PerfilUsuario {
   telefono?: string | null;
   titulo_academico?: string | null;
   cargo?: string | null;
+  carpeta_drive_url?: string | null;
   activo?: boolean;
   created_at?: string;
   updated_at?: string;
